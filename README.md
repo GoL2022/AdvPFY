@@ -1,8 +1,8 @@
-# Adversarial Purification with the Manifold Hypothesis
+# Adversarial Purification with the Manifold Hypothesis (AAAI 2024)
 
 > **This repository is under reconstruction...**
 
-Demo code for Adversarial Purification with the Manifold Hypothesis (AAAI2024). [Paper](https://ojs.aaai.org/index.php/AAAI/article/view/29574).
+Demo code for Adversarial Purification with the Manifold Hypothesis. [Paper](https://ojs.aaai.org/index.php/AAAI/article/view/29574).
 
 Use [training_demo.ipynb](training_demo.ipynb) to jointly train classifier with ELBO.
 
