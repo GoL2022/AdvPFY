@@ -3,6 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models.resnet import BasicBlock, resnet18, resnet50
 
+KERNEL_SIZE = 3
+STRIDE = 1
+LAST_DIM = 8
+NUM_CLASSES = 10
+
 def init_params(models):
     if not isinstance(models, list):
         models = [models]
@@ -18,14 +23,15 @@ def init_params(models):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
+
 class BasicBlock(nn.Module):
     def __init__(self, c_in, c_out, num_feature_map=64):
         super(BasicBlock, self).__init__()
-        self.conv1 = nn.Conv2d(c_in, c_out, 3, 1, padding='same')
+        self.conv1 = nn.Conv2d(c_in, c_out, KERNEL_SIZE, STRIDE, padding='same')
         self.conv1_bn=nn.BatchNorm2d(c_out)
-        self.conv11 = nn.Conv2d(c_out, num_feature_map, 3, 1, padding='same')
+        self.conv11 = nn.Conv2d(c_out, num_feature_map, KERNEL_SIZE, STRIDE, padding='same')
         self.conv11_bn=nn.BatchNorm2d(num_feature_map)
-        self.conv12 = nn.Conv2d(num_feature_map, c_out, 3, 1, padding='same')
+        self.conv12 = nn.Conv2d(num_feature_map, c_out, KERNEL_SIZE, STRIDE, padding='same')
         self.conv12_bn=nn.BatchNorm2d(c_out)
 
 
@@ -39,23 +45,22 @@ class BasicBlock(nn.Module):
         x = x + xi
         return x
 
-    
 
 class VAEClassifier(nn.Module):
-    def __init__(self, num_feature_map=64):
+    def __init__(self, num_feature_map=64, encoder_layer=3, decoder_layers=4):
         super(VAEClassifier, self).__init__()
-        self.encoder_module = nn.ModuleList([BasicBlock(1, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map),
-                                             BasicBlock(num_feature_map, num_feature_map)])
+
+        self.encoder_module = nn.ModuleList([BasicBlock(1, num_feature_map)])
+        for _ in range(encoder_layer):
+            self.encoder_module.append(BasicBlock(num_feature_map, num_feature_map))
         
-        self.decoder_module = nn.ModuleList([BasicBlock(num_feature_map, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map),
-                                             BasicBlock(num_feature_map, num_feature_map)])
+        self.decoder_module = nn.ModuleList()
+        for _ in range(decoder_layers):
+            self.decoder_module.append(BasicBlock(num_feature_map, num_feature_map))
         
-        self.output_layer = nn.ModuleList([BasicBlock(num_feature_map, 8), BasicBlock(8, 1)]) # decoder after upsampling
-        self.output_layer2 = nn.Linear(num_feature_map, 10) # classification head
+        # decoder after upsampling
+        self.output_layer = nn.ModuleList([BasicBlock(num_feature_map, LAST_DIM), BasicBlock(LAST_DIM, 1)]) 
+        self.output_layer2 = nn.Linear(num_feature_map, NUM_CLASSES) # classification head
         self.mean_val = nn.Linear(num_feature_map, num_feature_map)
         self.var_val = nn.Linear(num_feature_map, num_feature_map)
         self.latent_dim = num_feature_map
@@ -90,7 +95,7 @@ class VAEClassifier(nn.Module):
         for i_op in self.output_layer:
             x = i_op(x)
         
-        # output
+        # output, trim for 28x28
         x = x[:,:,2:30,2:30]
         x = torch.sigmoid(x) 
         
@@ -101,20 +106,19 @@ class VAEClassifier(nn.Module):
 
     
 class StAEClassifier(nn.Module):
-    def __init__(self, num_feature_map=64):
+    def __init__(self, num_feature_map=64, encoder_layer=3, decoder_layers=4):
         super(StAEClassifier, self).__init__()
-        self.encoder_module = nn.ModuleList([BasicBlock(1, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map),
-                                             BasicBlock(num_feature_map, num_feature_map)])
+
+        self.encoder_module = nn.ModuleList([BasicBlock(1, num_feature_map)])
+        for _ in range(encoder_layer):
+            self.encoder_module.append(BasicBlock(num_feature_map, num_feature_map))
         
-        self.decoder_module = nn.ModuleList([BasicBlock(num_feature_map, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map), 
-                                             BasicBlock(num_feature_map, num_feature_map),
-                                             BasicBlock(num_feature_map, num_feature_map)])
-        
-        self.output_layer = nn.ModuleList([BasicBlock(num_feature_map, 8), BasicBlock(8, 1)]) # decoder after upsampling
-        self.output_layer2 = nn.Linear(num_feature_map, 10)
+        self.decoder_module = nn.ModuleList()
+        for _ in range(decoder_layers):
+            self.decoder_module.append(BasicBlock(num_feature_map, num_feature_map))
+        # decoder after upsampling
+        self.output_layer = nn.ModuleList([BasicBlock(num_feature_map, LAST_DIM), BasicBlock(LAST_DIM, 1)]) 
+        self.output_layer2 = nn.Linear(num_feature_map, NUM_CLASSES)
         
     def forward(self, x, classification_only=True):
         for i_op in self.encoder_module:
@@ -150,7 +154,8 @@ class ResNetEnc(nn.Module):
 
         self.model.avgpool = nn.AdaptiveAvgPool2d(output_size=1)
         if self.image_size == 32:
-            self.model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            self.model.conv1 = nn.Conv2d(3, 64, kernel_size=KERNEL_SIZE, 
+                                         stride=STRIDE, padding=1, bias=False)
             delattr(self.model, 'maxpool')
             init_params(self.model.conv1)
 
@@ -169,18 +174,18 @@ class ResNetEnc(nn.Module):
 
         
 class ResNetVAE(nn.Module):
-    def __init__(self, REncoder, latent_dim=256):
+    def __init__(self, REncoder, latent_dim=256, latent_expand_ratio=8, decoder_layers=4):
         super(ResNetVAE, self).__init__()
-        self.encoder_module = nn.ModuleList([REncoder])
-        self.decoder_module = nn.ModuleList([BasicBlock(latent_dim, latent_dim), 
-                                             BasicBlock(latent_dim, latent_dim), 
-                                             BasicBlock(latent_dim, latent_dim),
-                                             BasicBlock(latent_dim, latent_dim)])
         
-        self.output_layer = nn.ModuleList([BasicBlock(latent_dim, 8), BasicBlock(8, 3)])
-        self.output_layer2 = nn.Linear(latent_dim, 10)
-        self.mean_val = nn.Linear(latent_dim * 8, latent_dim)
-        self.var_val = nn.Linear(latent_dim * 8, latent_dim)
+        self.encoder_module = nn.ModuleList([REncoder])
+        self.decoder_module = nn.ModuleList()
+        for _ in range(decoder_layers):
+            self.decoder_module.append(BasicBlock(latent_dim, latent_dim))
+        
+        self.output_layer = nn.ModuleList([BasicBlock(latent_dim, LAST_DIM), BasicBlock(LAST_DIM, 3)])
+        self.output_layer2 = nn.Linear(latent_dim, NUM_CLASSES)
+        self.mean_val = nn.Linear(latent_dim * latent_expand_ratio, latent_dim)
+        self.var_val = nn.Linear(latent_dim * latent_expand_ratio, latent_dim)
         self.latent_dim = latent_dim
         
     def forward(self, x, deterministic=True, classification_only=True):
