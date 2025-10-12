@@ -43,3 +43,15 @@ Examples (notebook usage)
   - purifying them with [`pgd_purify.vae_purify`](pgd_purify.py) and [`pgd_purify.stae_purify`](pgd_purify.py),
   - visualizing reconstructions and purified images.
 
+## Citation 
+```bibtex
+@inproceedings{yang2024adversarial,
+  title={Adversarial purification with the manifold hypothesis},
+  author={Yang, Zhaoyuan and Xu, Zhiwei and Zhang, Jing and Hartley, Richard and Tu, Peter},
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
+  volume={38},
+  number={15},
+  pages={16379--16387},
+  year={2024}
+}
+```
